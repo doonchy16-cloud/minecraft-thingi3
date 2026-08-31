@@ -1,0 +1,26 @@
+package dev.worldmind.region;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Test;
+
+final class RegionMaterializationClockTest {
+    @Test
+    void zeroChangedBlocksDoesNotResetPhysicalAgeClock() {
+        RegionState region = RegionState.fresh(new RegionKey("minecraft:overworld", 0, 0), 0L);
+
+        region.recordMaterializationResult(0, 4800L);
+
+        assertEquals(0L, region.lastMaterializationTick());
+        assertEquals(0.2, region.snapshot(4800L).elapsedDays(), 1e-9);
+    }
+
+    @Test
+    void actualChangedBlocksResetPhysicalAgeClock() {
+        RegionState region = RegionState.fresh(new RegionKey("minecraft:overworld", 0, 0), 0L);
+
+        region.recordMaterializationResult(3, 4800L);
+
+        assertEquals(4800L, region.lastMaterializationTick());
+        assertEquals(0.0, region.snapshot(4800L).elapsedDays(), 1e-9);
+    }
+}
