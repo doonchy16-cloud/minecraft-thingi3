@@ -67,6 +67,10 @@ public final class RegionState {
 
     public void markMaterialized(long tick) { lastMaterializationTick = Math.max(lastMaterializationTick, tick); }
 
+    public void recordMaterializationResult(int changedBlocks, long tick) {
+        if (changedBlocks > 0) markMaterialized(tick);
+    }
+
     public RegionalSnapshot snapshot(long tick) {
         double evaluationDays = Math.max(0, tick - lastEvaluationTick) / 24000.0;
         double physicalAgeDays = Math.max(0, tick - lastMaterializationTick) / 24000.0;
