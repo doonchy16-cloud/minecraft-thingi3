@@ -28,6 +28,11 @@ jobs:
           unzip -q /tmp/worldmind.zip -d worldmind-src
           test -f worldmind-src/build.gradle
           test -f worldmind-src/src/main/java/dev/worldmind/WorldmindMod.java
+          if [ -d worldmind-overrides/src ]; then
+            echo 'Applying verified compiler-fix overlays:'
+            find worldmind-overrides/src -type f -print
+            cp -R worldmind-overrides/src/. worldmind-src/src/
+          fi
 
       - name: Set up Java 25
         uses: actions/setup-java@v4
