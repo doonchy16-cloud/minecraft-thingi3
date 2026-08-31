@@ -35,8 +35,9 @@ public final class RegionalMaterializer {
             if (mutate(level, pos, plan.outcome(), plan.seed())) changed++;
         }
         state.markRegionPlanCommitted(plan.id());
-        state.region(plan.region()).ifPresent(r -> r.recordMaterializationResult(changed, state.worldTicks()));
-        return changed == 0 ? Result.NO_SAFE_MUTATIONS : Result.APPLIED;
+        final int changedBlocks = changed;
+        state.region(plan.region()).ifPresent(r -> r.recordMaterializationResult(changedBlocks, state.worldTicks()));
+        return changedBlocks == 0 ? Result.NO_SAFE_MUTATIONS : Result.APPLIED;
     }
 
     private List<BlockPos> targets(ServerLevel level, RegionKey region, long seed, int max) {
