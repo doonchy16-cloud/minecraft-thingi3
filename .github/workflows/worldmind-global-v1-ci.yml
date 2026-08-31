@@ -1,0 +1,79 @@
+name: Worldmind Global V1 CI
+
+on:
+  push:
+    branches:
+      - worldmind-global-v1-ci
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout CI host
+        uses: actions/checkout@v4
+
+      - name: Reconstruct exact Worldmind source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat worldmind-global-v1-fix/part00a.b64 \
+              worldmind-global-v1-fix/part00b.b64 \
+              worldmind-global-v1-4k/part{01..24}.b64 \
+              > /tmp/worldmind.b64
+          base64 -d /tmp/worldmind.b64 > /tmp/worldmind.zip
+          echo "e422cf7ff58f36e21ab7c8938eaf7c4c48cfd3aaec7856005a9a6fbc635acd57  /tmp/worldmind.zip" | sha256sum -c -
+          mkdir -p worldmind-src
+          unzip -q /tmp/worldmind.zip -d worldmind-src
+          test -f worldmind-src/build.gradle
+          test -f worldmind-src/src/main/java/dev/worldmind/WorldmindMod.java
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle 9.5.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+
+      - name: Unit tests and Fabric build
+        working-directory: worldmind-src
+        run: gradle --no-daemon test build
+
+      - name: Guard against forced remote chunk loading
+        working-directory: worldmind-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE 'getChunk\(|setChunkForced|addRegionTicket|forceLoad' \
+            src/main/java/dev/worldmind/sim \
+            src/main/java/dev/worldmind/materialize; then
+            echo 'Forbidden forced-chunk-loading pattern found.'
+            exit 1
+          fi
+
+      - name: Verify production JAR
+        working-directory: worldmind-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR="$(find build/libs -maxdepth 1 -type f -name 'worldmind-*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' | head -n 1)"
+          test -n "$JAR"
+          jar tf "$JAR" | grep -q '^fabric.mod.json$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/WorldmindMod.class$'
+          jar tf "$JAR" | grep -q '^assets/worldmind/blockstates/worldseal.json$'
+          jar tf "$JAR" | grep -q '^data/worldmind/recipe/worldseal.json$'
+          cp "$JAR" /tmp/Worldmind-v1.0.0.jar
+          sha256sum /tmp/Worldmind-v1.0.0.jar
+
+      - name: Upload playable build candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: Worldmind-v1.0.0
+          path: /tmp/Worldmind-v1.0.0.jar
+          if-no-files-found: error
+          retention-days: 14
