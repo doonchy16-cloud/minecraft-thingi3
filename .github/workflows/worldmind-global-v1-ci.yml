@@ -29,9 +29,13 @@ jobs:
           test -f worldmind-src/build.gradle
           test -f worldmind-src/src/main/java/dev/worldmind/WorldmindMod.java
           if [ -d worldmind-overrides/src ]; then
-            echo 'Applying verified compiler-fix overlays:'
+            echo 'Applying verified source overlays:'
             find worldmind-overrides/src -type f -print
             cp -R worldmind-overrides/src/. worldmind-src/src/
+          fi
+          if [ -f worldmind-overrides/build.gradle ]; then
+            echo 'Applying verified build.gradle overlay'
+            cp worldmind-overrides/build.gradle worldmind-src/build.gradle
           fi
 
       - name: Set up Java 25
