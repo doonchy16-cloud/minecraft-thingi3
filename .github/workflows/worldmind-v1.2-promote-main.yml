@@ -114,6 +114,7 @@ jobs:
           rm -rf worldmind-src/build worldmind-src/.gradle
           mkdir -p /tmp/worldmind-release
           cp -a worldmind-src/. /tmp/worldmind-release/
+          rm -f /tmp/worldmind-release/.github/workflows/build.yml
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -125,7 +126,7 @@ jobs:
           git add -A
 
           ACTUAL="$(find . -type f -not -path './.git/*' -not -path './build/*' -not -path './.gradle/*' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
-          test "$ACTUAL" = "fed243375c6f0b5022cc3f9090e3f828e6e0c1304bc6b7efcef18c33b397a90c"
+          test "$ACTUAL" = "a26a4e25009a5b7d8956741f16b15acf63f564a5d63d439ec51ab13360012911"
 
           git commit -m "release: promote Worldmind v1.2.0 source"
           git push --force-with-lease origin HEAD:refs/heads/worldmind-v1.2-release
