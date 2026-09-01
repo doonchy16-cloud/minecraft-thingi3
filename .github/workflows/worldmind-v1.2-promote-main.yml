@@ -120,6 +120,7 @@ jobs:
           git fetch origin main
           git checkout -B worldmind-v1.2-release origin/main
           git rm -r .
+          git clean -fdx
           cp -a /tmp/worldmind-release/. .
           git add -A
 
