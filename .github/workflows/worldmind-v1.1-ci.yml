@@ -1,0 +1,107 @@
+name: Worldmind V1.1 CI
+
+on:
+  push:
+    branches:
+      - worldmind-v1.1-ci
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout CI host
+        uses: actions/checkout@v4
+
+      - name: Reconstruct exact Worldmind V1.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat \
+            worldmind-v1.1-ci/source.part00.b64 \
+            worldmind-v1.1-ci/source.part01.b64 \
+            worldmind-v1.1-ci/fix02.part00.b64 \
+            worldmind-v1.1-ci/fix02.part01.b64 \
+            worldmind-v1.1-ci/fix02.part02.b64 \
+            worldmind-v1.1-ci/fix02.part03.b64 \
+            worldmind-v1.1-ci/fix02.part04.b64 \
+            worldmind-v1.1-ci/fix03.part00.b64 \
+            worldmind-v1.1-ci/fix03.part01.b64 \
+            worldmind-v1.1-ci/fix03.part02.b64 \
+            worldmind-v1.1-ci/fix03.part03.b64 \
+            worldmind-v1.1-ci/fix03.part04.b64 \
+            worldmind-v1.1-ci/fix04.part00.b64 \
+            worldmind-v1.1-ci/fix04.part01.b64 \
+            worldmind-v1.1-ci/fix04.part02.b64 \
+            worldmind-v1.1-ci/fix04.part03.b64 \
+            worldmind-v1.1-ci/fix04p4.00.b64 \
+            worldmind-v1.1-ci/fix04p4.01.b64 \
+            worldmind-v1.1-ci/fix04p4.02.b64 \
+            worldmind-v1.1-ci/fix04p4.03.b64 \
+            worldmind-v1.1-ci/source.part05.b64 \
+            worldmind-v1.1-ci/source.part06.b64 \
+            > /tmp/worldmind-v1.1.b64
+          base64 -d /tmp/worldmind-v1.1.b64 > /tmp/worldmind-v1.1.zip
+          echo "5299d7d4a91c7a71a687407ca34dae72ceaecfa3a96921c0f48b10467525ffdf  /tmp/worldmind-v1.1.zip" | sha256sum -c -
+          mkdir -p worldmind-src
+          unzip -q /tmp/worldmind-v1.1.zip -d worldmind-src
+          test -f worldmind-src/build.gradle
+          test -f worldmind-src/src/main/java/dev/worldmind/WorldmindMod.java
+          test -f worldmind-src/src/main/java/dev/worldmind/region/SpatialField.java
+          test -f worldmind-src/src/main/java/dev/worldmind/region/SpatialProcessPlanner.java
+          test -f worldmind-src/src/main/java/dev/worldmind/command/WorldmindCommands.java
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle 9.5.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+
+      - name: Unit tests and Fabric build
+        working-directory: worldmind-src
+        run: gradle --no-daemon test build
+
+      - name: Guard against forced remote chunk loading
+        working-directory: worldmind-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE 'getChunk\(|setChunkForced|addRegionTicket|forceLoad' \
+            src/main/java/dev/worldmind/sim \
+            src/main/java/dev/worldmind/materialize \
+            src/main/java/dev/worldmind/region; then
+            echo 'Forbidden forced-chunk-loading pattern found.'
+            exit 1
+          fi
+
+      - name: Verify production JAR
+        working-directory: worldmind-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR="$(find build/libs -maxdepth 1 -type f -name 'worldmind-*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' | head -n 1)"
+          test -n "$JAR"
+          jar tf "$JAR" | grep -q '^fabric.mod.json$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/WorldmindMod.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/region/SpatialField.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/region/SpatialProcessPlanner.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/command/WorldmindCommands.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/command/WorldmindAdminService.class$'
+          jar tf "$JAR" | grep -q '^assets/worldmind/blockstates/worldseal.json$'
+          jar tf "$JAR" | grep -q '^data/worldmind/recipe/worldseal.json$'
+          cp "$JAR" /tmp/Worldmind-v1.1.0.jar
+          sha256sum /tmp/Worldmind-v1.1.0.jar
+
+      - name: Upload playable V1.1 candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: Worldmind-v1.1.0
+          path: /tmp/Worldmind-v1.1.0.jar
+          if-no-files-found: error
+          retention-days: 14
