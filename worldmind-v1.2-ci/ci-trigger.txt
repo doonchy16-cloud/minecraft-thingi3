@@ -1,0 +1,1 @@
+Trigger exact Worldmind V1.2 Java 25/Fabric CI after workflow creation.
