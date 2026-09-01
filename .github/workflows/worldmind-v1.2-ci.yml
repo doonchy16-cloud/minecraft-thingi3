@@ -1,0 +1,138 @@
+name: Worldmind V1.2 CI
+
+on:
+  push:
+    branches:
+      - worldmind-v1.2-ci
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout CI host
+        uses: actions/checkout@v4
+
+      - name: Reconstruct certified V1.1 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat \
+            worldmind-v1.1-ci/source.part00.b64 \
+            worldmind-v1.1-ci/source.part01.b64 \
+            worldmind-v1.1-ci/fix02.part00.b64 \
+            worldmind-v1.1-ci/fix02.part01.b64 \
+            worldmind-v1.1-ci/fix02.part02.b64 \
+            worldmind-v1.1-ci/fix02.part03.b64 \
+            worldmind-v1.1-ci/fix02.part04.b64 \
+            worldmind-v1.1-ci/fix03.part00.b64 \
+            worldmind-v1.1-ci/fix03.part01.b64 \
+            worldmind-v1.1-ci/fix03.part02.b64 \
+            worldmind-v1.1-ci/fix03.part03.b64 \
+            worldmind-v1.1-ci/fix03.part04.b64 \
+            worldmind-v1.1-ci/fix04.part00.b64 \
+            worldmind-v1.1-ci/fix04.part01.b64 \
+            worldmind-v1.1-ci/fix04.part02.b64 \
+            worldmind-v1.1-ci/fix04.part03.b64 \
+            worldmind-v1.1-ci/fix04p4.00.b64 \
+            worldmind-v1.1-ci/fix04p4.01.b64 \
+            worldmind-v1.1-ci/fix04p4.02.b64 \
+            worldmind-v1.1-ci/fix04p4.03.b64 \
+            worldmind-v1.1-ci/source.part05.b64 \
+            worldmind-v1.1-ci/source.part06.b64 \
+            > /tmp/worldmind-v1.1.b64
+          base64 -d /tmp/worldmind-v1.1.b64 > /tmp/worldmind-v1.1.zip
+          echo "5299d7d4a91c7a71a687407ca34dae72ceaecfa3a96921c0f48b10467525ffdf  /tmp/worldmind-v1.1.zip" | sha256sum -c -
+          mkdir -p worldmind-src
+          unzip -q /tmp/worldmind-v1.1.zip -d worldmind-src
+
+      - name: Apply exact V1.2 patch and verify source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat \
+            worldmind-v1.2-ci/patch.part00.b64 \
+            worldmind-v1.2-ci/patch.part01.b64 \
+            worldmind-v1.2-ci/patch.part02.b64 \
+            worldmind-v1.2-ci/patch.part03a.b64 \
+            worldmind-v1.2-ci/patch.part03b0.b64 \
+            worldmind-v1.2-ci/patch.part03b1.b64 \
+            worldmind-v1.2-ci/patch.part03b2.b64 \
+            worldmind-v1.2-ci/patch.part03b3.b64 \
+            worldmind-v1.2-ci/patch.part04.b64 \
+            worldmind-v1.2-ci/patch.part05.b64 \
+            worldmind-v1.2-ci/patch.part06.b64 \
+            worldmind-v1.2-ci/patch.part07.b64 \
+            worldmind-v1.2-ci/patch.part08.b64 \
+            worldmind-v1.2-ci/patch.part09.b64 \
+            > /tmp/worldmind-v1.2-patch.b64
+          base64 -d /tmp/worldmind-v1.2-patch.b64 > /tmp/worldmind-v1.2.patch.gz
+          echo "d486ad9667a871424c10eb3e09414731f09a0237db3d3ecd275d825075903cec  /tmp/worldmind-v1.2.patch.gz" | sha256sum -c -
+          gzip -dc /tmp/worldmind-v1.2.patch.gz > /tmp/worldmind-v1.2.patch
+          (cd worldmind-src && patch -p1 < /tmp/worldmind-v1.2.patch)
+          ACTUAL="$(cd worldmind-src && find . -type f -not -path './build/*' -not -path './.gradle/*' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
+          test "$ACTUAL" = "fed243375c6f0b5022cc3f9090e3f828e6e0c1304bc6b7efcef18c33b397a90c"
+          test -f worldmind-src/src/main/java/dev/worldmind/ai/WorldmindAIManager.java
+          test -f worldmind-src/src/main/java/dev/worldmind/ai/OllamaIntelligenceProvider.java
+          test -f worldmind-src/src/main/java/dev/worldmind/ai/ForgeyIntelligenceProvider.java
+          test -f worldmind-src/src/main/java/dev/worldmind/command/WorldmindAIAdminService.java
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle 9.5.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+
+      - name: Unit tests and Fabric build
+        working-directory: worldmind-src
+        run: gradle --no-daemon test build
+
+      - name: Guard against forced remote chunk loading
+        working-directory: worldmind-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE 'getChunk\(|setChunkForced|addRegionTicket|forceLoad' \
+            src/main/java/dev/worldmind/sim \
+            src/main/java/dev/worldmind/materialize \
+            src/main/java/dev/worldmind/ai; then
+            echo 'Forbidden forced-chunk-loading pattern found.'
+            exit 1
+          fi
+
+      - name: Verify production V1.2 JAR
+        working-directory: worldmind-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR="$(find build/libs -maxdepth 1 -type f -name 'worldmind-*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' | head -n 1)"
+          test -n "$JAR"
+          jar tf "$JAR" | grep -q '^fabric.mod.json$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/WorldmindMod.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/command/WorldmindCommands.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/command/WorldmindAIAdminService.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/ai/WorldmindAIManager.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/ai/OllamaIntelligenceProvider.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/ai/ForgeyIntelligenceProvider.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/ai/CompatibleIntelligenceProvider.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/region/SpatialField.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/materialize/SpatialMaterializationGeometry.class$'
+          jar tf "$JAR" | grep -q '^assets/worldmind/blockstates/worldseal.json$'
+          jar tf "$JAR" | grep -q '^data/worldmind/recipe/worldseal.json$'
+          unzip -p "$JAR" fabric.mod.json | grep -q '"version": "1.2.0"'
+          cp "$JAR" /tmp/Worldmind-v1.2.0.jar
+          sha256sum /tmp/Worldmind-v1.2.0.jar
+
+      - name: Upload playable V1.2 candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: Worldmind-v1.2.0
+          path: /tmp/Worldmind-v1.2.0.jar
+          if-no-files-found: error
+          retention-days: 14
