@@ -1,0 +1,55 @@
+name: Build Worldmind
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+      - name: Unit tests and production build
+        run: gradle --no-daemon test build
+      - name: Verify production JAR contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR=$(find build/libs -maxdepth 1 -type f -name 'worldmind-*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' | head -1)
+          test -n "$JAR"
+          jar tf "$JAR" | grep -q '^fabric.mod.json$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/WorldmindMod.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/command/WorldmindCommands.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/command/WorldmindAIAdminService.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/ai/WorldmindAIManager.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/ai/OllamaIntelligenceProvider.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/ai/ForgeyIntelligenceProvider.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/ai/CompatibleIntelligenceProvider.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/region/SpatialField.class$'
+          jar tf "$JAR" | grep -q '^dev/worldmind/materialize/SpatialMaterializationGeometry.class$'
+          jar tf "$JAR" | grep -q '^assets/worldmind/blockstates/worldseal.json$'
+          jar tf "$JAR" | grep -q '^data/worldmind/recipe/worldseal.json$'
+          unzip -p "$JAR" fabric.mod.json | grep -q '"version": "1.2.0"'
+          echo "Verified $JAR"
+      - name: Guard against forced remote chunk loading in simulation and AI packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE 'getChunk\(|setChunkForced|addRegionTicket|forceLoad' src/main/java/dev/worldmind/sim src/main/java/dev/worldmind/materialize src/main/java/dev/worldmind/ai; then
+            echo 'Forbidden chunk-loading primitive found in Worldmind simulation/materialization/AI.' >&2
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: worldmind-v1.2.0
+          path: |
+            build/libs/worldmind-*.jar
+            !build/libs/*-sources.jar
+            !build/libs/*-dev.jar
